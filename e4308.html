@@ -1,0 +1,1415 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>4308-Run</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+  body, html {
+    width: 100%; height: 100%; overflow: hidden;
+    background: #0f0f0f; touch-action: none;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, system-ui, sans-serif;
+  }
+
+  /* CSS-переменная безопасного отступа сверху: не меньше 40px */
+  :root {
+    --safe-top: max(var(--tg-safe-area-inset-top, 0px), 40px);
+    --safe-bottom: max(var(--tg-safe-area-inset-bottom, 0px), 16px);
+  }
+
+  #gameCanvas { display: block; width: 100%; height: 100%; background: #171717; z-index: 1; }
+
+  /* === Верхние элементы — с гарантией от шторки === */
+  #timer {
+    position: absolute;
+    top: calc(var(--safe-top) + 6px);
+    left: 50%; transform: translateX(-50%);
+    font-family: monospace; font-size: 28px; font-weight: bold;
+    color: #d0d0d0; pointer-events: none; z-index: 30;
+  }
+  #record {
+    position: absolute;
+    top: calc(var(--safe-top) + 6px);
+    right: 68px;
+    font-family: monospace; font-size: 18px; font-weight: bold;
+    color: #9a9a9a; pointer-events: none; text-align: right;
+    line-height: 1.2; z-index: 30;
+  }
+  #record .label {
+    display: block; font-size: 11px; font-weight: normal;
+    color: #5c5c5c; letter-spacing: 1px; text-transform: uppercase;
+  }
+  #leaderboardBtn {
+    position: absolute;
+    top: calc(var(--safe-top) + 4px);
+    right: 18px;
+    width: 42px; height: 42px; border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; z-index: 30;
+    transition: background .2s, transform .12s, border-color .2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  #leaderboardBtn:active {
+    transform: scale(0.92);
+    background: rgba(232, 201, 106, 0.12);
+    border-color: rgba(232, 201, 106, 0.35);
+  }
+  #leaderboardBtn svg {
+    width: 22px; height: 22px; fill: none; stroke: #d0d0d0; stroke-width: 1.8;
+    stroke-linecap: round; stroke-linejoin: round; transition: stroke .2s;
+  }
+  #leaderboardBtn:active svg { stroke: #e8c96a; }
+  #joystickBase {
+    position: absolute;
+    bottom: calc(var(--safe-bottom) + 30px);
+    right: 40px; width: 130px; height: 130px;
+    background: rgba(255, 255, 255, 0.055);
+    border: 2.5px solid rgba(255, 255, 255, 0.22);
+    border-radius: 50%; touch-action: none; z-index: 30;
+    box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.3);
+  }
+  #joystickStick {
+    position: absolute; top: 30px; left: 30px; width: 70px; height: 70px;
+    background: rgba(255, 255, 255, 0.32);
+    border: 2px solid rgba(255, 255, 255, 0.35);
+    border-radius: 50%; pointer-events: none;
+    transform: translate(0px, 0px);
+    box-shadow: 0 3px 10px rgba(0, 0, 0, 0.4);
+  }
+  #leaderboardScreen {
+    position: absolute; inset: 0; background: #0f0f0f; z-index: 100;
+    display: flex; flex-direction: column;
+    padding-top: calc(var(--safe-top) + 20px);
+    padding-bottom: calc(var(--safe-bottom) + 10px);
+    opacity: 0; transform: translateY(16px); pointer-events: none;
+    transition: opacity .28s ease, transform .32s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  #leaderboardScreen.active { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .lb-header {
+    flex: 0 0 auto; display: flex; align-items: center;
+    padding: 12px 18px 16px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .lb-close {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    transition: background .2s, transform .12s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .lb-close:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.08); }
+  .lb-close svg { width: 18px; height: 18px; fill: none; stroke: #d0d0d0; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .lb-title { flex: 1; text-align: center; font-size: 16px; font-weight: 700; color: #dcdad6; letter-spacing: 0.5px; }
+  .lb-spacer { width: 38px; flex-shrink: 0; }
+  .lb-body-wrap { flex: 1; overflow: hidden; position: relative; touch-action: none; }
+  .lb-body {
+    position: absolute; inset: 0; overflow-y: auto;
+    padding: 12px 14px 30px 14px; -webkit-overflow-scrolling: touch;
+    will-change: transform;
+  }
+  .lb-body::-webkit-scrollbar { display: none; }
+  .lb-body { scrollbar-width: none; }
+  .lb-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 14px; border-radius: 14px; margin-bottom: 6px;
+    background: rgba(255, 255, 255, 0.02);
+    transition: background .2s;
+    opacity: 0; transform: translateY(8px);
+  }
+  #leaderboardScreen.active .lb-row {
+    animation: lbRowIn .42s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+  @keyframes lbRowIn { to { opacity: 1; transform: translateY(0); } }
+  .lb-row.top1 { background: linear-gradient(135deg, rgba(232, 201, 106, 0.12), rgba(232, 201, 106, 0.04)); box-shadow: inset 0 0 0 1.5px rgba(232, 201, 106, 0.35); }
+  .lb-row.top2 { background: linear-gradient(135deg, rgba(200, 200, 200, 0.10), rgba(200, 200, 200, 0.03)); box-shadow: inset 0 0 0 1.5px rgba(200, 200, 200, 0.22); }
+  .lb-row.top3 { background: linear-gradient(135deg, rgba(205, 127, 50, 0.10), rgba(205, 127, 50, 0.03)); box-shadow: inset 0 0 0 1.5px rgba(205, 127, 50, 0.28); }
+  .lb-row.me { background: rgba(107, 144, 184, 0.10); box-shadow: inset 0 0 0 1.5px rgba(107, 144, 184, 0.35); }
+  .lb-rank {
+    width: 28px; flex-shrink: 0; text-align: center;
+    font-size: 15px; font-weight: 800; color: #6a6a6a;
+    font-variant-numeric: tabular-nums;
+  }
+  .lb-row.top1 .lb-rank { color: #e8c96a; }
+  .lb-row.top2 .lb-rank { color: #c8c8c8; }
+  .lb-row.top3 .lb-rank { color: #cd7f32; }
+  .lb-ava {
+    width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+    background: #2a2a2a; display: flex; align-items: center; justify-content: center;
+    font-size: 15px; font-weight: 700; color: #1e1e1e; overflow: hidden;
+    box-shadow: 0 0 0 1.5px rgba(255,255,255,0.06);
+  }
+  .lb-ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lb-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .lb-name { font-size: 14px; font-weight: 600; color: #dcdad6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb-username { font-size: 11px; color: #6a6a6a; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .lb-time {
+    flex-shrink: 0; font-family: monospace; font-size: 15px; font-weight: 700;
+    color: #9a9a9a; font-variant-numeric: tabular-nums;
+  }
+  .lb-row.top1 .lb-time { color: #e8c96a; }
+  .lb-row.top2 .lb-time { color: #c8c8c8; }
+  .lb-row.top3 .lb-time { color: #cd7f32; }
+  .lb-empty { text-align: center; padding: 40px 20px; color: #6a6a6a; font-size: 14px; }
+  #restartOverlay {
+    position: absolute; inset: 0; background: rgba(0, 0, 0, 0.55);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10; opacity: 0; pointer-events: none;
+    transition: opacity .3s ease;
+    padding-top: var(--safe-top);
+    padding-bottom: var(--safe-bottom);
+  }
+  #restartOverlay.active { opacity: 1; pointer-events: auto; }
+  #restartOverlay .restart-text {
+    font-size: 22px; font-weight: 700; color: #d8d8d8;
+    letter-spacing: 1px; text-align: center; padding: 0 20px;
+    animation: restartPulse 2s ease-in-out infinite;
+  }
+  @keyframes restartPulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+  #loadingScreen {
+    position: absolute; inset: 0; background: #0f0f0f;
+    display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 20px; z-index: 200;
+    color: #9a9a9a; font-size: 14px;
+    transition: opacity .3s ease;
+  }
+  #loadingScreen.hidden { opacity: 0; pointer-events: none; }
+  .spinner {
+    width: 32px; height: 32px; border: 3px solid rgba(255,255,255,0.1);
+    border-top-color: #d0d0d0; border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  #replayScreen {
+    position: absolute; inset: 0;
+    background: #0f0f0f; z-index: 150;
+    display: flex; flex-direction: column;
+    padding-top: calc(var(--safe-top) + 10px);
+    padding-bottom: calc(var(--safe-bottom) + 10px);
+    opacity: 0; pointer-events: none;
+    transition: opacity .35s ease;
+  }
+  #replayScreen.active { opacity: 1; pointer-events: auto; }
+
+  .rp-header {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 18px 14px 18px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  }
+  .rp-close {
+    width: 38px; height: 38px; border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; flex-shrink: 0;
+    transition: background .2s, transform .12s;
+  }
+  .rp-close:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.08); }
+  .rp-close svg { width: 18px; height: 18px; fill: none; stroke: #d0d0d0; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+
+  .rp-ava {
+    width: 40px; height: 40px; border-radius: 50%; flex-shrink: 0;
+    background: #2a2a2a; display: flex; align-items: center; justify-content: center;
+    font-size: 16px; font-weight: 700; color: #1e1e1e; overflow: hidden;
+    box-shadow: 0 0 0 1.5px rgba(255,255,255,0.06);
+  }
+  .rp-ava img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+  .rp-info { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .rp-name { font-size: 14px; font-weight: 600; color: #dcdad6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rp-time {
+    font-family: monospace; font-size: 13px; font-weight: 700;
+    color: #e8c96a; font-variant-numeric: tabular-nums;
+  }
+
+  .rp-canvas-wrap {
+    flex: 1; position: relative; min-height: 0;
+    overflow: hidden;
+  }
+  #replayCanvas {
+    display: block; width: 100%; height: 100%;
+    background: #171717;
+  }
+
+  .rp-controls {
+    flex: 0 0 auto;
+    background: #171717;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 12px 16px 16px 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  .rp-progress-wrap {
+    height: 24px;
+    display: flex; align-items: center;
+    touch-action: none;
+    cursor: pointer;
+  }
+  .rp-progress {
+    position: relative;
+    width: 100%; height: 4px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 2px;
+    overflow: visible;
+  }
+  .rp-progress-fill {
+    position: absolute; left: 0; top: 0; bottom: 0;
+    background: #d0d0d0;
+    border-radius: 2px;
+    transition: width .08s linear;
+  }
+  .rp-progress-thumb {
+    position: absolute;
+    top: 50%; transform: translate(-50%, -50%);
+    width: 14px; height: 14px;
+    background: #f0f0f0;
+    border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+    transition: left .08s linear;
+  }
+  .rp-progress-wrap.dragging .rp-progress-thumb { transform: translate(-50%, -50%) scale(1.3); }
+  .rp-progress-wrap.dragging .rp-progress-fill,
+  .rp-progress-wrap.dragging .rp-progress-thumb { transition: none; }
+
+  .rp-buttons {
+    display: flex; align-items: center; justify-content: center;
+    gap: 20px;
+  }
+  .rp-btn {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: background .2s, transform .12s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .rp-btn:active { transform: scale(0.92); background: rgba(255, 255, 255, 0.10); }
+  .rp-btn svg {
+    width: 18px; height: 18px;
+    fill: none; stroke: #d0d0d0; stroke-width: 2;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  .rp-btn.play-btn {
+    width: 54px; height: 54px;
+    background: rgba(232, 201, 106, 0.15);
+    border-color: rgba(232, 201, 106, 0.4);
+  }
+  .rp-btn.play-btn svg { stroke: #e8c96a; width: 22px; height: 22px; fill: #e8c96a; }
+  .rp-btn.play-btn svg.pause-icon { fill: #e8c96a; }
+
+  .rp-speed-row {
+    display: flex; gap: 8px; justify-content: center;
+  }
+  .rp-speed-btn {
+    padding: 6px 14px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1.5px solid rgba(255, 255, 255, 0.08);
+    color: #9a9a9a;
+    font-size: 13px; font-weight: 700;
+    cursor: pointer;
+    transition: background .2s, color .2s, border-color .2s;
+  }
+  .rp-speed-btn:active { transform: scale(0.95); }
+  .rp-speed-btn.active {
+    background: rgba(232, 201, 106, 0.15);
+    border-color: rgba(232, 201, 106, 0.4);
+    color: #e8c96a;
+  }
+
+  .rp-time-row {
+    display: flex; justify-content: space-between;
+    font-family: monospace; font-size: 12px; color: #6a6a6a;
+    font-variant-numeric: tabular-nums;
+    padding: 0 2px;
+  }
+</style>
+</head>
+<body>
+  <div id="timer">0.0</div>
+  <div id="record">
+    <span class="label">Рекорд</span>
+    <span id="recordValue">0.0</span>
+  </div>
+
+  <div id="leaderboardBtn" aria-label="Лидерборд">
+    <svg viewBox="0 0 24 24">
+      <path d="M8 21V10"/>
+      <path d="M12 21V4"/>
+      <path d="M16 21V13"/>
+      <path d="M4 21h16"/>
+    </svg>
+  </div>
+
+  <canvas id="gameCanvas"></canvas>
+  <div id="joystickBase"><div id="joystickStick"></div></div>
+
+  <div id="restartOverlay">
+    <div class="restart-text">НАЖМИТЕ ДЛЯ РЕСТАРТА</div>
+  </div>
+
+  <div id="leaderboardScreen">
+    <div class="lb-header">
+      <div class="lb-close" id="lbCloseBtn">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </div>
+      <div class="lb-title">Таблица лидеров</div>
+      <div class="lb-spacer"></div>
+    </div>
+    <div class="lb-body-wrap" id="lbBodyWrap">
+      <div class="lb-body" id="lbBody"></div>
+    </div>
+  </div>
+
+  <div id="replayScreen">
+    <div class="rp-header">
+      <div class="rp-close" id="rpCloseBtn">
+        <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+      </div>
+      <div class="rp-ava" id="rpAva">?</div>
+      <div class="rp-info">
+        <div class="rp-name" id="rpName">Игрок</div>
+        <div class="rp-time" id="rpTime">0.0s</div>
+      </div>
+    </div>
+    <div class="rp-canvas-wrap">
+      <canvas id="replayCanvas"></canvas>
+    </div>
+    <div class="rp-controls">
+      <div class="rp-progress-wrap" id="rpProgressWrap">
+        <div class="rp-progress" id="rpProgress">
+          <div class="rp-progress-fill" id="rpProgressFill" style="width:0%"></div>
+          <div class="rp-progress-thumb" id="rpProgressThumb" style="left:0%"></div>
+        </div>
+      </div>
+      <div class="rp-time-row">
+        <span id="rpCurrentTime">0.0s</span>
+        <span id="rpTotalTime">0.0s</span>
+      </div>
+      <div class="rp-buttons">
+        <button class="rp-btn" id="rpPrevBtn" aria-label="Назад">
+          <svg viewBox="0 0 24 24"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <button class="rp-btn play-btn" id="rpPlayBtn" aria-label="Играть/Пауза">
+          <svg id="rpPlayIcon" viewBox="0 0 24 24"><polygon points="7 4 20 12 7 20 7 4" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="rp-btn" id="rpNextBtn" aria-label="Вперёд">
+          <svg viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+      </div>
+      <div class="rp-speed-row">
+        <button class="rp-speed-btn active" data-speed="0.5">×0.5</button>
+        <button class="rp-speed-btn" data-speed="1">×1</button>
+        <button class="rp-speed-btn" data-speed="2">×2</button>
+        <button class="rp-speed-btn" data-speed="4">×4</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="loadingScreen">
+    <div class="spinner"></div>
+    <div id="loadingMsg">Подключение…</div>
+  </div>
+
+<script>
+(function () {
+    const API_BASE = 'https://4308.vidokl.xyz';
+    const CONFIG = {
+        // Базовая скорость — 4.5 на экране 400px. Ниже масштабируется от размера.
+        playerSpeedBase: 4.5,
+        enemySpeedBase: 4.5,
+        playerRadius: 18, enemyRadius: 18,
+        enemySmooth: 0.35, waypointReachDist: 10,
+        repathPlayerMoveThreshold: 55, repathCooldown: 110,
+        mazeCols: 7, mazeRows: 10, mazeOpenness: 0.22, wallThickness: 12,
+        wallStartClearance: 70,
+        mapGenAttempts: 40, connectivityStep: 20, connectivityPad: 2,
+        losCornerPad: 3, losCheckPad: 0.9, losChasePad: 0.85,
+        REPLAY_FPS: 30,
+        PING_INTERVAL_MS: 3000,
+        LOGIC_TICK_MS: 33,
+    };
+
+    const COLORS = {
+        background: '#171717', gridLine: 'rgba(255,255,255,0.012)',
+        wall: '#404040', wallShadow: 'rgba(0,0,0,0.55)',
+        player: '#c8c8c8', playerOutline: 'rgba(0,0,0,0.35)',
+        enemy: '#b03a2e', enemyOutline: '#7a2820',
+    };
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const timerElement = document.getElementById('timer');
+    const recordValueEl = document.getElementById('recordValue');
+    const restartOverlay = document.getElementById('restartOverlay');
+    const loadingScreen = document.getElementById('loadingScreen');
+    const loadingMsg = document.getElementById('loadingMsg');
+
+    const tg = window.Telegram?.WebApp;
+    if (tg) {
+        tg.ready();
+        tg.expand();
+        if (tg.requestFullscreen) {
+            try { tg.requestFullscreen(); } catch (e) {}
+        }
+        try { tg.setHeaderColor('#0f0f0f'); } catch (e) {}
+    }
+
+    const startParam = tg?.initDataUnsafe?.start_param || '';
+
+    let sessionId = null;
+    let pingTimer = null;
+    let myUserId = null;
+    let myBestShown = parseFloat(localStorage.getItem('game_best_time_sec')) || 0;
+    function renderRecord() { recordValueEl.textContent = myBestShown.toFixed(1); }
+    renderRecord();
+
+    async function apiPost(path, body) {
+        const res = await fetch(API_BASE + path, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        let data = null;
+        try { data = await res.json(); } catch (e) {}
+        if (!res.ok) {
+            const err = new Error((data && data.error) || ('HTTP ' + res.status));
+            err.status = res.status; err.data = data;
+            throw err;
+        }
+        return data;
+    }
+
+    async function startSession() {
+        if (!tg || !tg.initData) {
+            loadingMsg.textContent = 'Откройте игру через Telegram';
+            return false;
+        }
+        try {
+            const res = await apiPost('/api/start', { initData: tg.initData });
+            sessionId = res.sessionId;
+            myUserId = res.userId;
+            if (typeof res.best === 'number' && res.best > 0) {
+                myBestShown = res.best;
+                renderRecord();
+            }
+            startPingLoop();
+            return true;
+        } catch (e) {
+            console.error('start failed', e);
+            loadingMsg.textContent = 'Ошибка подключения: ' + (e.message || 'неизвестно');
+            return false;
+        }
+    }
+
+    function startPingLoop() {
+        stopPingLoop();
+        const ping = async () => {
+            if (!sessionId || isGameOver) return;
+            try { await apiPost('/api/ping', { sessionId }); }
+            catch (e) { console.warn('ping failed', e); }
+        };
+        pingTimer = setInterval(ping, CONFIG.PING_INTERVAL_MS);
+        ping();
+    }
+    function stopPingLoop() {
+        if (pingTimer) { clearInterval(pingTimer); pingTimer = null; }
+    }
+
+    async function sendDie(wallsArr, logArr) {
+        if (!sessionId) return null;
+        try {
+            return await apiPost('/api/die', {
+                sessionId,
+                fps: CONFIG.REPLAY_FPS,
+                walls: wallsArr,
+                log: logArr,
+            });
+        } catch (e) {
+            console.error('die failed', e);
+            return null;
+        }
+    }
+
+    let startTime = null;
+    let isGameOver = false;
+    let roundStarted = false;
+    let walls = [];
+    let playerStart = { x: 0, y: 0 };
+    let enemyStart = { x: 0, y: 0 };
+    let restartArmed = false;
+    let replayBuffer = [];
+    let lastReplayCapture = 0;
+    const REPLAY_INTERVAL = 1000 / CONFIG.REPLAY_FPS;
+
+    function generateMap() {
+        const W = canvas.width, H = canvas.height;
+        const cols = CONFIG.mazeCols, rows = CONFIG.mazeRows;
+        const cellW = W / cols, cellH = H / rows, thickness = CONFIG.wallThickness;
+
+        const maze = [];
+        for (let r = 0; r < rows; r++) {
+            const row = [];
+            for (let c = 0; c < cols; c++) row.push({ top: true, right: true, bottom: true, left: true, visited: false });
+            maze.push(row);
+        }
+        const stack = [];
+        const startR = Math.floor(Math.random() * rows), startC = Math.floor(Math.random() * cols);
+        maze[startR][startC].visited = true;
+        stack.push({ r: startR, c: startC });
+        const dirs = [
+            { dr: -1, dc: 0, from: 'top', to: 'bottom' },
+            { dr: 1, dc: 0, from: 'bottom', to: 'top' },
+            { dr: 0, dc: 1, from: 'right', to: 'left' },
+            { dr: 0, dc: -1, from: 'left', to: 'right' }
+        ];
+        while (stack.length > 0) {
+            const cur = stack[stack.length - 1];
+            const neighbors = [];
+            for (const d of dirs) {
+                const nr = cur.r + d.dr, nc = cur.c + d.dc;
+                if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !maze[nr][nc].visited) neighbors.push({ r: nr, c: nc, dir: d });
+            }
+            if (neighbors.length === 0) { stack.pop(); continue; }
+            const pick = neighbors[Math.floor(Math.random() * neighbors.length)];
+            maze[cur.r][cur.c][pick.dir.from] = false;
+            maze[pick.r][pick.c][pick.dir.to] = false;
+            maze[pick.r][pick.c].visited = true;
+            stack.push({ r: pick.r, c: pick.c });
+        }
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if (r > 0 && maze[r][c].top && Math.random() < CONFIG.mazeOpenness) { maze[r][c].top = false; maze[r - 1][c].bottom = false; }
+                if (c > 0 && maze[r][c].left && Math.random() < CONFIG.mazeOpenness) { maze[r][c].left = false; maze[r][c - 1].right = false; }
+            }
+        }
+        const rawWalls = [];
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                const cell = maze[r][c];
+                const x0 = c * cellW, y0 = r * cellH;
+                if (cell.top) rawWalls.push({ x: x0 - thickness/2, y: y0 - thickness/2, width: cellW + thickness, height: thickness });
+                if (cell.left) rawWalls.push({ x: x0 - thickness/2, y: y0 - thickness/2, width: thickness, height: cellH + thickness });
+                if (c === cols - 1 && cell.right) rawWalls.push({ x: x0 + cellW - thickness/2, y: y0 - thickness/2, width: thickness, height: cellH + thickness });
+                if (r === rows - 1 && cell.bottom) rawWalls.push({ x: x0 - thickness/2, y: y0 + cellH - thickness/2, width: cellW + thickness, height: thickness });
+            }
+        }
+        const minClear = CONFIG.wallStartClearance;
+        const clearZones = [
+            { x: playerStart.x - minClear, y: playerStart.y - minClear, width: minClear*2, height: minClear*2 },
+            { x: enemyStart.x - minClear, y: enemyStart.y - minClear, width: minClear*2, height: minClear*2 }
+        ];
+        function intersectsZone(w) {
+            for (const z of clearZones) {
+                if (w.x + w.width > z.x && w.x < z.x + z.width && w.y + w.height > z.y && w.y < z.y + z.height) return true;
+            }
+            return false;
+        }
+        const newWalls = [];
+        for (const w of rawWalls) {
+            if (intersectsZone(w)) continue;
+            const speckles = [];
+            const speckCount = Math.floor((w.width * w.height) / 240);
+            for (let s = 0; s < speckCount; s++) speckles.push({ dx: Math.random()*w.width, dy: Math.random()*w.height, r: 0.6 + Math.random()*1.2, a: 0.02 + Math.random()*0.05 });
+            newWalls.push({ x: w.x, y: w.y, width: w.width, height: w.height, speckles });
+        }
+        walls = newWalls;
+    }
+
+    function isMapConnected() {
+        const STEP = CONFIG.connectivityStep;
+        const cols = Math.ceil(canvas.width / STEP), rows = Math.ceil(canvas.height / STEP);
+        const startCell = { x: Math.floor(playerStart.x / STEP), y: Math.floor(playerStart.y / STEP) };
+        const goalCell = { x: Math.floor(enemyStart.x / STEP), y: Math.floor(enemyStart.y / STEP) };
+        const safeRadius = CONFIG.enemyRadius + CONFIG.connectivityPad;
+        function cellBlocked(cx, cy) {
+            const wx = cx*STEP + STEP/2, wy = cy*STEP + STEP/2;
+            for (const wall of walls) {
+                const cxp = Math.max(wall.x, Math.min(wx, wall.x + wall.width));
+                const cyp = Math.max(wall.y, Math.min(wy, wall.y + wall.height));
+                if (Math.hypot(wx - cxp, wy - cyp) < safeRadius) return true;
+            }
+            return false;
+        }
+        if (cellBlocked(startCell.x, startCell.y)) return false;
+        if (cellBlocked(goalCell.x, goalCell.y)) return false;
+        const key = (a, b) => a + ',' + b;
+        const visited = new Set([key(startCell.x, startCell.y)]);
+        const queue = [startCell];
+        const N = [[1,0],[-1,0],[0,1],[0,-1]];
+        while (queue.length > 0) {
+            const cur = queue.shift();
+            if (cur.x === goalCell.x && cur.y === goalCell.y) return true;
+            for (const [dx, dy] of N) {
+                const nx = cur.x + dx, ny = cur.y + dy;
+                if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+                const k = key(nx, ny);
+                if (visited.has(k)) continue;
+                if (cellBlocked(nx, ny)) continue;
+                visited.add(k);
+                queue.push({ x: nx, y: ny });
+            }
+        }
+        return false;
+    }
+
+    // === Скорости масштабируются от размера экрана ===
+    // База: 4.5 на экране 400px. При 500px — 5.6, при 600px — 6.75.
+    const player = { x: 0, y: 0, radius: CONFIG.playerRadius, speed: 4.5 };
+    const enemy = { x: 0, y: 0, radius: CONFIG.enemyRadius, speed: 4.5 };
+
+    function updateSpeeds() {
+        const scale = Math.min(canvas.width, canvas.height) / 400;
+        player.speed = CONFIG.playerSpeedBase * scale;
+        enemy.speed = CONFIG.enemySpeedBase * scale;
+    }
+
+    let enemyPath = [], enemyPathIndex = 0, enemyVel = { x: 0, y: 0 };
+    let waypointHoldTimer = 0, lastRepathTime = 0;
+    let lastRepathPlayerPos = { x: 0, y: 0 };
+
+    function initPositions() {
+        playerStart.x = canvas.width / 2; playerStart.y = canvas.height - 80;
+        enemyStart.x = canvas.width / 2; enemyStart.y = 80;
+        player.x = playerStart.x; player.y = playerStart.y;
+        enemy.x = enemyStart.x; enemy.y = enemyStart.y;
+        updateSpeeds();
+        let attempts = 0;
+        do { generateMap(); attempts++; } while (!isMapConnected() && attempts < CONFIG.mapGenAttempts);
+        enemyPath = []; enemyPathIndex = 0; enemyVel = { x: 0, y: 0 };
+        waypointHoldTimer = 0; lastRepathTime = 0;
+        lastRepathPlayerPos = { x: player.x, y: player.y };
+        resolveWallCollisions(player); resolveWallCollisions(enemy);
+        rebuildPath();
+    }
+
+    function resize() {
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        initPositions();
+        replayBuffer = []; lastReplayCapture = 0;
+    }
+    window.addEventListener('resize', resize);
+
+    const joystickBase = document.getElementById('joystickBase');
+    const joystickStick = document.getElementById('joystickStick');
+    let joystickActive = false;
+    let baseRect = joystickBase.getBoundingClientRect();
+    const maxDist = 30;
+    let moveDirection = { x: 0, y: 0 };
+
+    function updateJoystickCenter() { baseRect = joystickBase.getBoundingClientRect(); }
+    window.addEventListener('resize', updateJoystickCenter);
+
+    joystickBase.addEventListener('pointerdown', (e) => {
+        if (isGameOver) return;
+        e.stopPropagation();
+        joystickActive = true;
+        updateJoystickCenter();
+        handleTouch(e);
+    });
+    window.addEventListener('pointermove', (e) => {
+        if (!joystickActive || isGameOver) return;
+        handleTouch(e);
+    });
+    window.addEventListener('pointerup', () => {
+        if (!joystickActive) return;
+        joystickActive = false;
+        moveDirection = { x: 0, y: 0 };
+        joystickStick.style.transform = `translate(0px, 0px)`;
+    });
+
+    function handleTouch(e) {
+        const cx = baseRect.left + baseRect.width/2, cy = baseRect.top + baseRect.height/2;
+        const dx = e.clientX - cx, dy = e.clientY - cy;
+        const d = Math.hypot(dx, dy);
+        if (d === 0) return;
+        const nx = dx/d, ny = dy/d;
+        moveDirection = { x: nx, y: ny };
+        const sd = Math.min(d, maxDist);
+        joystickStick.style.transform = `translate(${nx*sd}px, ${ny*sd}px)`;
+    }
+
+    function resolveWallCollisions(obj) {
+        for (let wall of walls) {
+            const cx = Math.max(wall.x, Math.min(obj.x, wall.x + wall.width));
+            const cy = Math.max(wall.y, Math.min(obj.y, wall.y + wall.height));
+            const dx = obj.x - cx, dy = obj.y - cy;
+            const dist = Math.hypot(dx, dy);
+            if (dist < obj.radius) {
+                const overlap = obj.radius - dist;
+                if (dist > 0.001) { obj.x += (dx/dist)*overlap; obj.y += (dy/dist)*overlap; }
+                else { obj.y -= 1; }
+            }
+        }
+        if (obj.x - obj.radius < 0) obj.x = obj.radius;
+        if (obj.x + obj.radius > canvas.width) obj.x = canvas.width - obj.radius;
+        if (obj.y - obj.radius < 0) obj.y = obj.radius;
+        if (obj.y + obj.radius > canvas.height) obj.y = canvas.height - obj.radius;
+    }
+
+    function pointInWall(x, y, pad) {
+        for (const wall of walls) {
+            if (x > wall.x - pad && x < wall.x + wall.width + pad && y > wall.y - pad && y < wall.y + wall.height + pad) return true;
+        }
+        return false;
+    }
+
+    function hasLineOfSight(x1, y1, x2, y2, pad) {
+        const dx = x2 - x1, dy = y2 - y1;
+        if (Math.abs(dx) < 0.0001 && Math.abs(dy) < 0.0001) return true;
+        for (const wall of walls) {
+            const L = wall.x - pad, R = wall.x + wall.width + pad;
+            const T = wall.y - pad, B = wall.y + wall.height + pad;
+            if (x1 < L && x2 < L) continue;
+            if (x1 > R && x2 > R) continue;
+            if (y1 < T && y2 < T) continue;
+            if (y1 > B && y2 > B) continue;
+            const inA = (x1 >= L && x1 <= R && y1 >= T && y1 <= B);
+            const inB = (x2 >= L && x2 <= R && y2 >= T && y2 <= B);
+            if (inA || inB) return false;
+            if (dx !== 0) {
+                let t = (L - x1)/dx; if (t >= 0 && t <= 1) { const yy = y1 + t*dy; if (yy >= T && yy <= B) return false; }
+                t = (R - x1)/dx; if (t >= 0 && t <= 1) { const yy = y1 + t*dy; if (yy >= T && yy <= B) return false; }
+            }
+            if (dy !== 0) {
+                let t = (T - y1)/dy; if (t >= 0 && t <= 1) { const xx = x1 + t*dx; if (xx >= L && xx <= R) return false; }
+                t = (B - y1)/dy; if (t >= 0 && t <= 1) { const xx = x1 + t*dx; if (xx >= L && xx <= R) return false; }
+            }
+        }
+        return true;
+    }
+
+    function buildNodeList(startX, startY, goalX, goalY) {
+        const nodes = [{ x: startX, y: startY }, { x: goalX, y: goalY }];
+        const pad = CONFIG.enemyRadius + CONFIG.losCornerPad;
+        for (const wall of walls) {
+            const corners = [
+                { x: wall.x - pad, y: wall.y - pad },
+                { x: wall.x + wall.width + pad, y: wall.y - pad },
+                { x: wall.x - pad, y: wall.y + wall.height + pad },
+                { x: wall.x + wall.width + pad, y: wall.y + wall.height + pad }
+            ];
+            for (const corner of corners) {
+                if (pointInWall(corner.x, corner.y, -1)) continue;
+                if (corner.x < CONFIG.enemyRadius || corner.x > canvas.width - CONFIG.enemyRadius) continue;
+                if (corner.y < CONFIG.enemyRadius || corner.y > canvas.height - CONFIG.enemyRadius) continue;
+                nodes.push(corner);
+            }
+        }
+        return nodes;
+    }
+
+    function buildGraph(nodes) {
+        const n = nodes.length;
+        const adj = Array.from({ length: n }, () => []);
+        const pad = CONFIG.enemyRadius * CONFIG.losCheckPad;
+        for (let i = 0; i < n; i++) {
+            for (let j = i + 1; j < n; j++) {
+                const a = nodes[i], b = nodes[j];
+                if (hasLineOfSight(a.x, a.y, b.x, b.y, pad)) {
+                    const d = Math.hypot(a.x - b.x, a.y - b.y);
+                    adj[i].push({ to: j, dist: d });
+                    adj[j].push({ to: i, dist: d });
+                }
+            }
+        }
+        return adj;
+    }
+
+    function visibilityGraphPath(startX, startY, goalX, goalY) {
+        if (hasLineOfSight(startX, startY, goalX, goalY, CONFIG.enemyRadius * CONFIG.losChasePad)) return [{ x: goalX, y: goalY }];
+        const nodes = buildNodeList(startX, startY, goalX, goalY);
+        const adj = buildGraph(nodes);
+        const n = nodes.length, startIdx = 0, goalIdx = 1;
+        const dist = new Array(n).fill(Infinity), prev = new Array(n).fill(-1), visited = new Array(n).fill(false);
+        dist[startIdx] = 0;
+        const heap = [{ idx: startIdx, d: 0 }];
+        while (heap.length > 0) {
+            let bestI = 0;
+            for (let i = 1; i < heap.length; i++) if (heap[i].d < heap[bestI].d) bestI = i;
+            const cur = heap.splice(bestI, 1)[0];
+            if (visited[cur.idx]) continue;
+            visited[cur.idx] = true;
+            if (cur.idx === goalIdx) break;
+            for (const edge of adj[cur.idx]) {
+                if (visited[edge.to]) continue;
+                const nd = cur.d + edge.dist;
+                if (nd < dist[edge.to]) { dist[edge.to] = nd; prev[edge.to] = cur.idx; heap.push({ idx: edge.to, d: nd }); }
+            }
+        }
+        if (dist[goalIdx] === Infinity) return [{ x: goalX, y: goalY }];
+        const path = []; let k = goalIdx;
+        while (k !== -1) { path.push({ x: nodes[k].x, y: nodes[k].y }); k = prev[k]; }
+        path.reverse();
+        if (path.length > 1) path.shift();
+        if (path.length > 0) path[path.length - 1] = { x: goalX, y: goalY }; else path.push({ x: goalX, y: goalY });
+        return path;
+    }
+
+    function rebuildPath() {
+        enemyPath = visibilityGraphPath(enemy.x, enemy.y, player.x, player.y);
+        enemyPathIndex = 0; waypointHoldTimer = 0;
+        lastRepathTime = performance.now();
+        lastRepathPlayerPos.x = player.x; lastRepathPlayerPos.y = player.y;
+    }
+
+    function updateEnemyAI() {
+        if (!roundStarted) { enemyVel.x = 0; enemyVel.y = 0; return; }
+        if (hasLineOfSight(enemy.x, enemy.y, player.x, player.y, CONFIG.enemyRadius * CONFIG.losChasePad)) {
+            enemyPath = [{ x: player.x, y: player.y }]; enemyPathIndex = 0;
+            lastRepathTime = performance.now();
+            lastRepathPlayerPos.x = player.x; lastRepathPlayerPos.y = player.y;
+        } else {
+            const now = performance.now();
+            const playerMovedDist = Math.hypot(player.x - lastRepathPlayerPos.x, player.y - lastRepathPlayerPos.y);
+            if (playerMovedDist > CONFIG.repathPlayerMoveThreshold && now - lastRepathTime > CONFIG.repathCooldown) rebuildPath();
+        }
+        while (enemyPathIndex < enemyPath.length) {
+            const wp = enemyPath[enemyPathIndex];
+            if (Math.hypot(wp.x - enemy.x, wp.y - enemy.y) < CONFIG.waypointReachDist) enemyPathIndex++; else break;
+        }
+        if (enemyPathIndex >= enemyPath.length) rebuildPath();
+        let target;
+        if (enemyPathIndex < enemyPath.length) target = enemyPath[enemyPathIndex]; else target = { x: player.x, y: player.y };
+        const dx = target.x - enemy.x, dy = target.y - enemy.y;
+        const len = Math.hypot(dx, dy);
+        let desiredVX = 0, desiredVY = 0;
+        if (len > 0.001) { desiredVX = (dx/len)*enemy.speed; desiredVY = (dy/len)*enemy.speed; }
+        const SMOOTH = CONFIG.enemySmooth;
+        enemyVel.x += (desiredVX - enemyVel.x) * SMOOTH;
+        enemyVel.y += (desiredVY - enemyVel.y) * SMOOTH;
+        const prevX = enemy.x, prevY = enemy.y;
+        enemy.x += enemyVel.x; resolveWallCollisions(enemy);
+        enemy.y += enemyVel.y; resolveWallCollisions(enemy);
+        const moved = Math.hypot(enemy.x - prevX, enemy.y - prevY);
+        if (moved < 0.5 && len > CONFIG.waypointReachDist) {
+            waypointHoldTimer++;
+            if (waypointHoldTimer > 4) { rebuildPath(); waypointHoldTimer = 0; }
+        } else waypointHoldTimer = 0;
+    }
+
+    function resetGame() {
+        isGameOver = false; restartArmed = false;
+        roundStarted = false; startTime = null;
+        timerElement.textContent = '0.0';
+        replayBuffer = []; lastReplayCapture = 0;
+        restartOverlay.classList.remove('active');
+        moveDirection = { x: 0, y: 0 }; joystickActive = false;
+        joystickStick.style.transform = 'translate(0px, 0px)';
+        initPositions();
+        startSession().catch(() => {});
+    }
+
+    function finalizeRecord(elapsed) {
+        if (elapsed > myBestShown) {
+            myBestShown = elapsed;
+            localStorage.setItem('game_best_time_sec', myBestShown.toFixed(2));
+            renderRecord();
+        }
+    }
+
+    function captureReplaySample(now) {
+        if (now - lastReplayCapture < REPLAY_INTERVAL) return;
+        lastReplayCapture = now;
+        replayBuffer.push([
+            Math.round(player.x), Math.round(player.y),
+            Math.round(enemy.x), Math.round(enemy.y)
+        ]);
+    }
+
+    async function submitResult() {
+        if (startTime === null) return;
+        const elapsed = (Date.now() - startTime) / 1000;
+        finalizeRecord(elapsed);
+        const wallsCompact = walls.map(w => [Math.round(w.x), Math.round(w.y), Math.round(w.width), Math.round(w.height)]);
+        stopPingLoop();
+        const res = await sendDie(wallsCompact, replayBuffer);
+        console.log('die result:', res);
+        sessionId = null;
+    }
+
+    function update() {
+        if (isGameOver) return;
+        const playerMoving = (moveDirection.x !== 0 || moveDirection.y !== 0);
+        if (playerMoving) {
+            if (!roundStarted) {
+                roundStarted = true; startTime = Date.now();
+                rebuildPath();
+            }
+            player.x += moveDirection.x * player.speed; resolveWallCollisions(player);
+            player.y += moveDirection.y * player.speed; resolveWallCollisions(player);
+        }
+        if (startTime !== null) {
+            timerElement.textContent = ((Date.now() - startTime) / 1000).toFixed(1);
+        } else {
+            timerElement.textContent = '0.0';
+        }
+        updateEnemyAI();
+        if (roundStarted && !isGameOver) captureReplaySample(performance.now());
+        if (Math.hypot(player.x - enemy.x, player.y - enemy.y) < player.radius + enemy.radius - 4) {
+            isGameOver = true; restartArmed = false;
+            submitResult();
+            restartOverlay.classList.add('active');
+            setTimeout(() => { restartArmed = true; }, 300);
+        }
+    }
+
+    function drawPiece(x, y, radius, fillColor, outlineColor) {
+        ctx.beginPath(); ctx.arc(x + 2, y + 3, radius, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fill();
+        ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI*2);
+        ctx.fillStyle = fillColor; ctx.fill();
+        ctx.strokeStyle = outlineColor; ctx.lineWidth = 2; ctx.stroke();
+        ctx.beginPath(); ctx.arc(x - radius*0.3, y - radius*0.3, radius*0.32, 0, Math.PI*2);
+        ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fill();
+    }
+
+    function draw() {
+        ctx.fillStyle = COLORS.background; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.strokeStyle = COLORS.gridLine; ctx.lineWidth = 1;
+        const gridSize = 60;
+        for (let x = 0; x < canvas.width; x += gridSize) { ctx.beginPath(); ctx.moveTo(x+0.5, 0); ctx.lineTo(x+0.5, canvas.height); ctx.stroke(); }
+        for (let y = 0; y < canvas.height; y += gridSize) { ctx.beginPath(); ctx.moveTo(0, y+0.5); ctx.lineTo(canvas.width, y+0.5); ctx.stroke(); }
+        ctx.save();
+        ctx.shadowColor = COLORS.wallShadow; ctx.shadowBlur = 12; ctx.shadowOffsetY = 4;
+        ctx.fillStyle = COLORS.wall;
+        for (const wall of walls) ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+        ctx.restore();
+        ctx.fillStyle = COLORS.wall;
+        for (const wall of walls) ctx.fillRect(wall.x, wall.y, wall.width, wall.height);
+        for (const wall of walls) {
+            if (wall.speckles) {
+                for (const sp of wall.speckles) {
+                    ctx.fillStyle = `rgba(255,255,255,${sp.a})`;
+                    ctx.beginPath(); ctx.arc(wall.x + sp.dx, wall.y + sp.dy, sp.r, 0, Math.PI*2); ctx.fill();
+                }
+            }
+        }
+        drawPiece(enemy.x, enemy.y, enemy.radius, COLORS.enemy, COLORS.enemyOutline);
+        drawPiece(player.x, player.y, player.radius, COLORS.player, COLORS.playerOutline);
+    }
+
+    setInterval(() => { update(); }, CONFIG.LOGIC_TICK_MS);
+    function drawLoop() { draw(); requestAnimationFrame(drawLoop); }
+    drawLoop();
+
+    const leaderboardScreen = document.getElementById('leaderboardScreen');
+    const leaderboardBtn = document.getElementById('leaderboardBtn');
+    const lbCloseBtn = document.getElementById('lbCloseBtn');
+    const lbBody = document.getElementById('lbBody');
+    const lbBodyWrap = document.getElementById('lbBodyWrap');
+
+    async function loadLeaderboard() {
+        try {
+            const res = await fetch(API_BASE + '/api/leaderboard');
+            const data = await res.json();
+            return data.top || [];
+        } catch (e) {
+            console.warn('lb load failed', e);
+            return [];
+        }
+    }
+
+    function renderLeaderboard(data) {
+        lbBody.innerHTML = '';
+        if (!data.length) {
+            const empty = document.createElement('div');
+            empty.className = 'lb-empty';
+            empty.textContent = 'Пока никто не играл. Будь первым!';
+            lbBody.appendChild(empty);
+            return;
+        }
+        data.forEach((entry, index) => {
+            const row = document.createElement('div');
+            row.className = 'lb-row';
+            if (index === 0) row.classList.add('top1');
+            else if (index === 1) row.classList.add('top2');
+            else if (index === 2) row.classList.add('top3');
+            if (myUserId && entry.userId === myUserId) row.classList.add('me');
+            row.style.animationDelay = (index * 0.035) + 's';
+
+            const rank = document.createElement('div');
+            rank.className = 'lb-rank'; rank.textContent = (index + 1);
+            row.appendChild(rank);
+
+            const ava = document.createElement('div');
+            ava.className = 'lb-ava';
+            if (entry.photo) {
+                const img = document.createElement('img');
+                img.src = entry.photo; img.alt = ''; img.referrerPolicy = 'no-referrer';
+                ava.appendChild(img);
+            } else {
+                ava.textContent = (entry.name || '?').charAt(0).toUpperCase();
+            }
+            row.appendChild(ava);
+
+            const info = document.createElement('div');
+            info.className = 'lb-info';
+            const nameEl = document.createElement('div');
+            nameEl.className = 'lb-name';
+            nameEl.textContent = entry.name || 'Безымянный';
+            const unameEl = document.createElement('div');
+            unameEl.className = 'lb-username';
+            unameEl.textContent = entry.username ? '@' + entry.username : '';
+            info.appendChild(nameEl); info.appendChild(unameEl);
+            row.appendChild(info);
+
+            const time = document.createElement('div');
+            time.className = 'lb-time';
+            time.textContent = entry.time.toFixed(1) + 'с';
+            row.appendChild(time);
+
+            lbBody.appendChild(row);
+        });
+    }
+
+    async function openLeaderboard() {
+        lbBody.innerHTML = '<div class="lb-empty">Загрузка…</div>';
+        leaderboardScreen.classList.add('active');
+        lbBody.scrollTop = 0;
+        lbBody.style.transform = 'translateY(0px)';
+        lbBody.style.transition = '';
+        const data = await loadLeaderboard();
+        renderLeaderboard(data);
+    }
+    function closeLeaderboard() { leaderboardScreen.classList.remove('active'); }
+
+    leaderboardBtn.addEventListener('click', (e) => { e.stopPropagation(); openLeaderboard(); });
+    lbCloseBtn.addEventListener('click', (e) => { e.stopPropagation(); closeLeaderboard(); });
+
+    let lbTouchActive = false, lbLastTouchY = 0, lbOverScroll = 0;
+    const OVERSCROLL_MAX = 90, OVERSCROLL_RESIST = 0.45;
+
+    lbBodyWrap.addEventListener('touchstart', (e) => {
+        lbTouchActive = true;
+        lbLastTouchY = e.touches[0].clientY;
+        lbOverScroll = 0;
+        lbBody.style.transition = '';
+        lbBody.style.transform = 'translateY(0px)';
+    }, { passive: true });
+
+    lbBodyWrap.addEventListener('touchmove', (e) => {
+        if (!lbTouchActive) return;
+        const y = e.touches[0].clientY;
+        const delta = y - lbLastTouchY;
+        lbLastTouchY = y;
+        const atTop = lbBody.scrollTop <= 0;
+        const atBottom = lbBody.scrollTop + lbBody.clientHeight >= lbBody.scrollHeight - 1;
+        if (atTop && delta > 0) {
+            lbOverScroll += delta * OVERSCROLL_RESIST;
+            if (lbOverScroll > OVERSCROLL_MAX) lbOverScroll = OVERSCROLL_MAX + (lbOverScroll - OVERSCROLL_MAX) * 0.4;
+            lbBody.style.transform = `translateY(${lbOverScroll}px)`;
+            if (e.cancelable) e.preventDefault();
+        } else if (atBottom && delta < 0) {
+            lbOverScroll += delta * OVERSCROLL_RESIST;
+            if (lbOverScroll < -OVERSCROLL_MAX) lbOverScroll = -OVERSCROLL_MAX + (lbOverScroll + OVERSCROLL_MAX) * 0.4;
+            lbBody.style.transform = `translateY(${lbOverScroll}px)`;
+            if (e.cancelable) e.preventDefault();
+        }
+    }, { passive: false });
+
+    function lbEndTouch() {
+        if (!lbTouchActive) return;
+        lbTouchActive = false;
+        lbBody.style.transition = 'transform .38s cubic-bezier(0.22, 1, 0.36, 1)';
+        lbBody.style.transform = 'translateY(0px)';
+        lbOverScroll = 0;
+        setTimeout(() => { lbBody.style.transition = ''; }, 400);
+    }
+    lbBodyWrap.addEventListener('touchend', lbEndTouch, { passive: true });
+    lbBodyWrap.addEventListener('touchcancel', lbEndTouch, { passive: true });
+
+    window.addEventListener('click', (e) => {
+        if (!isGameOver || !restartArmed) return;
+        const target = e.target;
+        if (target === leaderboardBtn || leaderboardBtn.contains(target)) return;
+        if (leaderboardScreen.contains(target)) return;
+        resetGame();
+    });
+
+    const replayScreen = document.getElementById('replayScreen');
+    const replayCanvas = document.getElementById('replayCanvas');
+    const rctx = replayCanvas.getContext('2d');
+    const rpCloseBtn = document.getElementById('rpCloseBtn');
+    const rpAva = document.getElementById('rpAva');
+    const rpName = document.getElementById('rpName');
+    const rpTime = document.getElementById('rpTime');
+    const rpProgressWrap = document.getElementById('rpProgressWrap');
+    const rpProgressFill = document.getElementById('rpProgressFill');
+    const rpProgressThumb = document.getElementById('rpProgressThumb');
+    const rpCurrentTime = document.getElementById('rpCurrentTime');
+    const rpTotalTime = document.getElementById('rpTotalTime');
+    const rpPrevBtn = document.getElementById('rpPrevBtn');
+    const rpPlayBtn = document.getElementById('rpPlayBtn');
+    const rpNextBtn = document.getElementById('rpNextBtn');
+
+    let replayData = null;
+    let rpWallsCompact = [];
+    let rpLog = [];
+    let rpFps = 30;
+    let rpCurrentIndex = 0;
+    let rpPlaying = false;
+    let rpSpeed = 0.5;
+    let rpLastFrameTime = 0;
+    let rpAccumulator = 0;
+    let rpRafId = null;
+    let rpScale = 1;
+    let rpOriginalW = 0, rpOriginalH = 0;
+    let rpOffsetX = 0, rpOffsetY = 0;
+
+    const PLAY_ICON = '<polygon points="7 4 20 12 7 20 7 4" stroke-linejoin="round"/>';
+    const PAUSE_ICON = '<rect x="7" y="4" width="3" height="16" rx="0.5"/><rect x="14" y="4" width="3" height="16" rx="0.5"/>';
+
+    async function loadReplayAndShow(recordId) {
+        loadingMsg.textContent = 'Загрузка повтора…';
+        try {
+            const res = await fetch(API_BASE + '/api/record/' + recordId);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            replayData = await res.json();
+        } catch (e) {
+            loadingMsg.textContent = 'Повтор не найден';
+            return;
+        }
+
+        if (replayData.photo) {
+            rpAva.innerHTML = `<img src="${replayData.photo}" alt="" referrerpolicy="no-referrer">`;
+        } else {
+            rpAva.textContent = (replayData.name || '?').charAt(0).toUpperCase();
+        }
+        rpName.textContent = replayData.name || 'Игрок';
+        if (replayData.username) rpName.textContent += ' • @' + replayData.username;
+        rpTime.textContent = (replayData.time || 0).toFixed(1) + 's';
+
+        rpWallsCompact = replayData.walls || [];
+        rpLog = replayData.log || [];
+        rpFps = replayData.fps || 30;
+        rpCurrentIndex = 0;
+
+        const totalSec = rpLog.length / rpFps;
+        rpTotalTime.textContent = totalSec.toFixed(1) + 's';
+        rpCurrentTime.textContent = '0.0s';
+
+        replayScreen.classList.add('active');
+        loadingScreen.classList.add('hidden');
+
+        resizeReplayCanvas();
+        window.addEventListener('resize', resizeReplayCanvas);
+
+        rpSetPlaying(true);
+        rpRenderFrame();
+    }
+
+    function resizeReplayCanvas() {
+        const wrap = replayCanvas.parentElement;
+        const rect = wrap.getBoundingClientRect();
+        const dpr = window.devicePixelRatio || 1;
+        replayCanvas.width = Math.floor(rect.width * dpr);
+        replayCanvas.height = Math.floor(rect.height * dpr);
+        replayCanvas.style.width = rect.width + 'px';
+        replayCanvas.style.height = rect.height + 'px';
+        rctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+        let maxX = 0, maxY = 0;
+        for (const w of rpWallsCompact) {
+            maxX = Math.max(maxX, w[0] + w[2]);
+            maxY = Math.max(maxY, w[1] + w[3]);
+        }
+        for (const s of rpLog) {
+            maxX = Math.max(maxX, s[0] + 40, s[2] + 40);
+            maxY = Math.max(maxY, s[1] + 40, s[3] + 40);
+        }
+        rpOriginalW = Math.max(maxX, 400);
+        rpOriginalH = Math.max(maxY, 600);
+
+        const scaleX = rect.width / rpOriginalW;
+        const scaleY = rect.height / rpOriginalH;
+        rpScale = Math.min(scaleX, scaleY);
+        rpOffsetX = (rect.width - rpOriginalW * rpScale) / 2;
+        rpOffsetY = (rect.height - rpOriginalH * rpScale) / 2;
+    }
+
+    function rpRenderFrame() {
+        if (!replayData) return;
+        const rect = replayCanvas.getBoundingClientRect();
+        rctx.fillStyle = COLORS.background;
+        rctx.fillRect(0, 0, rect.width, rect.height);
+
+        rctx.save();
+        rctx.translate(rpOffsetX, rpOffsetY);
+        rctx.scale(rpScale, rpScale);
+
+        rctx.save();
+        rctx.shadowColor = COLORS.wallShadow; rctx.shadowBlur = 12; rctx.shadowOffsetY = 4;
+        rctx.fillStyle = COLORS.wall;
+        for (const w of rpWallsCompact) rctx.fillRect(w[0], w[1], w[2], w[3]);
+        rctx.restore();
+        rctx.fillStyle = COLORS.wall;
+        for (const w of rpWallsCompact) rctx.fillRect(w[0], w[1], w[2], w[3]);
+
+        const s = rpLog[rpCurrentIndex] || rpLog[0] || [0, 0, 0, 0];
+        const px = s[0], py = s[1], ex = s[2], ey = s[3];
+        const pr = CONFIG.playerRadius, er = CONFIG.enemyRadius;
+
+        rctx.beginPath(); rctx.arc(ex + 2, ey + 3, er, 0, Math.PI*2);
+        rctx.fillStyle = 'rgba(0,0,0,0.35)'; rctx.fill();
+        rctx.beginPath(); rctx.arc(ex, ey, er, 0, Math.PI*2);
+        rctx.fillStyle = COLORS.enemy; rctx.fill();
+        rctx.strokeStyle = COLORS.enemyOutline; rctx.lineWidth = 2; rctx.stroke();
+        rctx.beginPath(); rctx.arc(ex - er*0.3, ey - er*0.3, er*0.32, 0, Math.PI*2);
+        rctx.fillStyle = 'rgba(255,255,255,0.28)'; rctx.fill();
+
+        rctx.beginPath(); rctx.arc(px + 2, py + 3, pr, 0, Math.PI*2);
+        rctx.fillStyle = 'rgba(0,0,0,0.35)'; rctx.fill();
+        rctx.beginPath(); rctx.arc(px, py, pr, 0, Math.PI*2);
+        rctx.fillStyle = COLORS.player; rctx.fill();
+        rctx.strokeStyle = COLORS.playerOutline; rctx.lineWidth = 2; rctx.stroke();
+        rctx.beginPath(); rctx.arc(px - pr*0.3, py - pr*0.3, pr*0.32, 0, Math.PI*2);
+        rctx.fillStyle = 'rgba(255,255,255,0.28)'; rctx.fill();
+
+        rctx.restore();
+    }
+
+    function rpUpdateProgress() {
+        const total = rpLog.length;
+        if (total === 0) return;
+        const p = (rpCurrentIndex / (total - 1)) * 100;
+        rpProgressFill.style.width = p + '%';
+        rpProgressThumb.style.left = p + '%';
+        const t = rpCurrentIndex / rpFps;
+        rpCurrentTime.textContent = t.toFixed(1) + 's';
+    }
+
+    function rpSetPlaying(play) {
+        rpPlaying = play;
+        rpLastFrameTime = performance.now();
+        rpAccumulator = 0;
+        const icon = rpPlayBtn.querySelector('svg');
+        icon.innerHTML = play ? PAUSE_ICON : PLAY_ICON;
+        if (play) rpStartLoop(); else rpStopLoop();
+        rpRenderFrame();
+    }
+
+    function rpStartLoop() {
+        if (rpRafId !== null) return;
+        rpLastFrameTime = performance.now();
+        rpRafId = requestAnimationFrame(rpLoop);
+    }
+    function rpStopLoop() {
+        if (rpRafId !== null) {
+            cancelAnimationFrame(rpRafId);
+            rpRafId = null;
+        }
+    }
+    function rpLoop(now) {
+        rpRafId = null;
+        if (!rpPlaying) return;
+        const dt = (now - rpLastFrameTime) / 1000;
+        rpLastFrameTime = now;
+        rpAccumulator += dt * rpSpeed * rpFps;
+
+        let advanced = false;
+        while (rpAccumulator >= 1) {
+            rpAccumulator -= 1;
+            if (rpCurrentIndex < rpLog.length - 1) {
+                rpCurrentIndex++;
+                advanced = true;
+            } else {
+                rpPlaying = false;
+                rpPlayBtn.querySelector('svg').innerHTML = PLAY_ICON;
+                advanced = true;
+                break;
+            }
+        }
+        if (advanced) {
+            rpRenderFrame();
+            rpUpdateProgress();
+        }
+        if (rpPlaying) rpRafId = requestAnimationFrame(rpLoop);
+    }
+
+    rpPlayBtn.addEventListener('click', () => {
+        if (rpCurrentIndex >= rpLog.length - 1 && !rpPlaying) {
+            rpCurrentIndex = 0;
+            rpUpdateProgress();
+            rpRenderFrame();
+        }
+        rpSetPlaying(!rpPlaying);
+    });
+    rpPrevBtn.addEventListener('click', () => {
+        rpSetPlaying(false);
+        rpCurrentIndex = Math.max(0, rpCurrentIndex - Math.round(rpFps / 2));
+        rpUpdateProgress();
+        rpRenderFrame();
+    });
+    rpNextBtn.addEventListener('click', () => {
+        rpSetPlaying(false);
+        rpCurrentIndex = Math.min(rpLog.length - 1, rpCurrentIndex + Math.round(rpFps / 2));
+        rpUpdateProgress();
+        rpRenderFrame();
+    });
+
+    document.querySelectorAll('.rp-speed-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.rp-speed-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            rpSpeed = parseFloat(btn.dataset.speed);
+        });
+    });
+
+    let rpSeeking = false;
+    function rpSeekFromEvent(e) {
+        const rect = rpProgressWrap.getBoundingClientRect();
+        const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+        const p = Math.max(0, Math.min(1, x / rect.width));
+        rpCurrentIndex = Math.round(p * (rpLog.length - 1));
+        rpUpdateProgress();
+        rpRenderFrame();
+    }
+    rpProgressWrap.addEventListener('pointerdown', (e) => {
+        rpSeeking = true;
+        rpProgressWrap.classList.add('dragging');
+        rpSetPlaying(false);
+        rpSeekFromEvent(e);
+    });
+    window.addEventListener('pointermove', (e) => {
+        if (!rpSeeking) return;
+        rpSeekFromEvent(e);
+    });
+    window.addEventListener('pointerup', () => {
+        if (!rpSeeking) return;
+        rpSeeking = false;
+        rpProgressWrap.classList.remove('dragging');
+    });
+
+    rpCloseBtn.addEventListener('click', () => {
+        rpSetPlaying(false);
+        if (tg && tg.close) {
+            try { tg.close(); } catch (e) {}
+        }
+    });
+
+    (async function bootstrap() {
+        if (startParam && startParam.startsWith('record_')) {
+            const recordId = startParam.slice('record_'.length);
+            await loadReplayAndShow(recordId);
+            return;
+        }
+
+        const ok = await startSession();
+        if (!ok) return;
+        resize();
+        loadingScreen.classList.add('hidden');
+    })();
+})();
+</script>
+</body>
+</html>
