@@ -1,0 +1,1097 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1e1f22">
+<title>Bottle Flip</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+:root {
+    --bg: #1e1f22;
+    --bg-soft: #232529;
+    --panel: #27292d;
+    --panel-edge: #33363b;
+    --text: #dcdad6;
+    --text-dim: #86898f;
+    --accent: #69c6f5;
+    --accent-soft: #2a3a47;
+    --danger: #d9534f;
+    --success: #4caf7d;
+    --gold: #e8c96a;
+}
+
+* {
+    box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
+    -webkit-tap-highlight-color: transparent;
+}
+
+html, body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    touch-action: none;
+}
+
+body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+canvas {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+#errorScreen {
+    position: fixed;
+    inset: 0;
+    background: var(--bg);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 30px 24px;
+    z-index: 100;
+    text-align: center;
+}
+#errorScreen.show { display: flex; }
+
+.error-icon {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: #3a2f1e;
+    color: var(--gold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 20px;
+}
+.error-icon svg { width: 36px; height: 36px; }
+
+.error-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--text);
+    margin-bottom: 8px;
+}
+.error-text {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.5;
+    max-width: 300px;
+    margin-bottom: 24px;
+}
+.error-retry {
+    height: 48px;
+    padding: 0 32px;
+    border: none;
+    border-radius: 14px;
+    background: var(--accent);
+    color: #0f151a;
+    font-size: 15px;
+    font-weight: 800;
+    font-family: inherit;
+    cursor: pointer;
+}
+.error-retry:active { transform: scale(0.97); }
+.error-retry:disabled { opacity: 0.6; cursor: wait; }
+
+.icon-btn {
+    position: absolute;
+    width: 46px;
+    height: 46px;
+    border: none;
+    border-radius: 14px;
+    background: var(--panel);
+    color: var(--text);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+    box-shadow: inset 0 0 0 1px var(--panel-edge);
+    transition: transform .1s, background .2s;
+}
+.icon-btn:active { transform: scale(0.94); }
+.icon-btn:hover { background: #303339; }
+
+#leaderboardBtn {
+    left: 20px;
+    top: calc(20px + env(safe-area-inset-top));
+}
+#leaderboardBtn svg { width: 24px; height: 24px; display: block; }
+
+#throwButton {
+    position: absolute;
+    left: 50%;
+    bottom: calc(30px + env(safe-area-inset-bottom));
+    transform: translateX(-50%);
+    width: min(78%, 340px);
+    height: 67px;
+    border: none;
+    border-radius: 19px;
+    background: var(--accent);
+    overflow: hidden;
+    touch-action: none;
+    cursor: pointer;
+    z-index: 5;
+    transition: opacity .2s, background .2s;
+}
+#throwButton.restart-mode {
+    background: #4a5a6a;
+}
+#charge {
+    position: absolute;
+    left: 0; top: 0;
+    width: 0%;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.35);
+    border-radius: inherit;
+    pointer-events: none;
+    transition: width .04s linear;
+}
+#throwButton span {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #0f151a;
+    font-size: 17px;
+    font-weight: 800;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    pointer-events: none;
+}
+#throwButton.restart-mode span { color: var(--text); }
+
+.overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    z-index: 50;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .25s;
+}
+.overlay.show { opacity: 1; pointer-events: auto; }
+
+.modal {
+    width: 100%;
+    max-width: 380px;
+    max-height: 88vh;
+    background: var(--panel);
+    border-radius: 22px;
+    padding: 22px 20px 18px;
+    display: flex;
+    flex-direction: column;
+    transform: scale(0.94);
+    transition: transform .25s;
+    overflow: hidden;
+    box-shadow: inset 0 0 0 1px var(--panel-edge), 0 24px 60px rgba(0, 0, 0, 0.6);
+}
+.overlay.show .modal { transform: scale(1); }
+
+.modal-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+.modal-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.modal-title svg {
+    width: 22px;
+    height: 22px;
+    display: block;
+    color: var(--gold);
+}
+.modal-close {
+    width: 34px;
+    height: 34px;
+    border: none;
+    border-radius: 10px;
+    background: var(--bg-soft);
+    color: var(--text-dim);
+    font-size: 18px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: inset 0 0 0 1px var(--panel-edge);
+}
+.modal-close:active { transform: scale(0.94); }
+
+.lb-list {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    margin: 0 -6px;
+    padding: 0 6px;
+    min-height: 0;
+}
+.lb-empty {
+    text-align: center;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 40px 10px;
+    line-height: 1.5;
+}
+.lb-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px;
+    border-radius: 14px;
+    background: var(--bg-soft);
+    margin-bottom: 8px;
+    box-shadow: inset 0 0 0 1px var(--panel-edge);
+}
+.lb-row.me {
+    background: var(--accent-soft);
+    box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+
+.lb-avatar {
+    width: 40px;
+    height: 40px;
+    flex-shrink: 0;
+    border-radius: 50%;
+    overflow: hidden;
+    background: #3a3d43;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--text-dim);
+}
+.lb-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.lb-info {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.lb-name {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.lb-detail {
+    font-size: 11.5px;
+    color: var(--text-dim);
+}
+.lb-percent {
+    flex-shrink: 0;
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--accent);
+    font-variant-numeric: tabular-nums;
+}
+
+.modal-foot {
+    display: flex;
+    gap: 10px;
+    margin-top: 14px;
+    flex-shrink: 0;
+}
+.modal-foot button {
+    flex: 1;
+    height: 44px;
+    border: none;
+    border-radius: 13px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    font-family: inherit;
+    background: var(--accent);
+    color: #0f151a;
+}
+.modal-foot button:active { transform: scale(0.98); }
+
+.flash {
+    position: fixed;
+    left: 50%;
+    top: 18%;
+    transform: translate(-50%, -10px);
+    background: var(--success);
+    color: #fff;
+    font-size: 15px;
+    font-weight: 800;
+    padding: 10px 20px;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    z-index: 40;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity .3s, transform .3s;
+    letter-spacing: 0.5px;
+}
+.flash.show {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+.flash.fail { background: var(--danger); }
+</style>
+</head>
+<body>
+
+<canvas id="game"></canvas>
+
+<div id="errorScreen">
+    <div class="error-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 9v4"></path>
+            <path d="M12 17h.01"></path>
+            <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+        </svg>
+    </div>
+    <div class="error-title">Нет соединения с сервером</div>
+    <div class="error-text">Не удалось связаться с игровым сервером. Проверьте интернет и попробуйте позже.</div>
+    <button class="error-retry" id="retryBtn">Повторить</button>
+</div>
+
+<button id="leaderboardBtn" class="icon-btn" aria-label="Таблица лидеров" style="display:none;">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+         stroke-linecap="round" stroke-linejoin="round">
+        <path d="M8 21h8"></path>
+        <path d="M12 17v4"></path>
+        <path d="M7 4h10v5a5 5 0 0 1-10 0V4z"></path>
+        <path d="M7 5H4a2 2 0 0 0 0 4h1"></path>
+        <path d="M17 5h3a2 2 0 0 1 0 4h-1"></path>
+    </svg>
+</button>
+
+<button id="throwButton" aria-label="Бросок" style="display:none;">
+    <div id="charge"></div>
+    <span id="throwLabel">Бросок</span>
+</button>
+
+<div class="overlay" id="leaderboardOverlay">
+    <div class="modal">
+        <div class="modal-head">
+            <div class="modal-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 21h8"></path>
+                    <path d="M12 17v4"></path>
+                    <path d="M7 4h10v5a5 5 0 0 1-10 0V4z"></path>
+                    <path d="M7 5H4a2 2 0 0 0 0 4h1"></path>
+                    <path d="M17 5h3a2 2 0 0 1 0 4h-1"></path>
+                </svg>
+                Лидеры
+            </div>
+            <button class="modal-close" id="lbClose" aria-label="Закрыть">✕</button>
+        </div>
+        <div class="lb-list" id="lbList"></div>
+        <div class="modal-foot">
+            <button id="lbClose2">Закрыть</button>
+        </div>
+    </div>
+</div>
+
+<div class="flash" id="flash"></div>
+
+<script>
+"use strict";
+
+/* === API === */
+const API_BASE = "https://4308.vidokl.xyz";
+
+const WATER_PERCENT = 10;
+const THROW_RANDOMNESS = 3;
+const GRAVITY = 1750;
+const RESTITUTION = 0.045;
+const FRICTION = 0.82;
+const VISUAL_WATER_FILL = 0.20;
+const CHARGE_TIME = 1.65;
+const STEP = 1 / 120;
+
+const SUCCESS_ANGLE_DEG = 14;
+const REST_SPEED = 22;
+
+const LOG = "[BOTTLE]";
+function logInfo(...a){console.log(LOG,...a);}
+function logWarn(...a){console.warn(LOG,...a);}
+function logError(...a){console.error(LOG,...a);}
+
+const tg = window.Telegram?.WebApp;
+let me = null;
+let serverReady = false;
+
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const button = document.getElementById("throwButton");
+const buttonLabel = document.getElementById("throwLabel");
+const chargeBar = document.getElementById("charge");
+const leaderboardBtn = document.getElementById("leaderboardBtn");
+const errorScreen = document.getElementById("errorScreen");
+const retryBtn = document.getElementById("retryBtn");
+
+let W=0,H=0,groundY=0,scale=1;
+let charging=false, charge=0, activePointer=null;
+let canThrow=true, inRestartMode=false;
+let lastTime=0, accumulator=0;
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
+function randomFactor(){const a=Math.max(0,THROW_RANDOMNESS)/100;return 1+(Math.random()*2-1)*a;}
+function randomSigned(){return Math.random()*2-1;}
+
+const SHAPE=[
+[-0.23,-0.50],[0.23,-0.50],[0.23,-0.39],[0.19,-0.29],
+[0.40,-0.23],[0.47,-0.15],[0.47,0.42],[0.42,0.50],
+[-0.42,0.50],[-0.47,0.42],[-0.47,-0.15],[-0.40,-0.23],
+[-0.19,-0.29],[-0.23,-0.39]
+];
+
+const bottle={
+x:0,y:0,vx:0,vy:0,angle:0,omega:0,w:45,h:116,
+mass:1,inertia:1,waterMass:0,waterX:0,waterVX:0,waterY:0,launched:false
+};
+let throwResultRecorded=true, throwInProgress=false;
+
+function resize(){
+    const dpr=Math.min(window.devicePixelRatio||1,2);
+    W=window.innerWidth;H=window.innerHeight;
+    canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);
+    canvas.style.width=W+"px";canvas.style.height=H+"px";
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    scale=Math.max(0.65,Math.min(W/390,H/700,1.25));
+    groundY=H*0.72;
+    bottle.w=45*scale;bottle.h=116*scale;
+    reset();
+}
+
+function updateButton(){
+    if(inRestartMode){buttonLabel.textContent="Рестарт ↻";button.classList.add("restart-mode");}
+    else{buttonLabel.textContent="Бросок";button.classList.remove("restart-mode");}
+}
+
+function reset(){
+    charging=false;activePointer=null;charge=0;chargeBar.style.width="0%";
+    bottle.x=W*0.36;bottle.y=groundY-bottle.h*0.5;
+    bottle.vx=0;bottle.vy=0;bottle.angle=0;bottle.omega=0;
+    bottle.waterX=0;bottle.waterVX=0;bottle.launched=false;
+    throwResultRecorded=true;throwInProgress=false;
+    canThrow=true;inRestartMode=false;updateButton();
+    const fill=clamp(WATER_PERCENT/100,0,1);
+    const emptyBottleMass=0.15,maxWaterMass=1.0;
+    bottle.waterMass=maxWaterMass*fill;
+    bottle.mass=emptyBottleMass+bottle.waterMass;
+    bottle.waterY=bottle.h*(0.50-fill*0.50);
+    const shellInertia=emptyBottleMass*(bottle.w**2+bottle.h**2)/12;
+    const waterInertia=bottle.waterMass*(bottle.waterY**2+bottle.w**2/16+bottle.h**2*fill**2/12);
+    bottle.inertia=shellInertia+waterInertia;
+}
+
+button.addEventListener("pointerdown",e=>{
+    e.preventDefault();
+    if(!serverReady)return;
+    if(inRestartMode){reset();return;}
+    if(charging)return;
+    if(throwInProgress)return;
+    charging=true;charge=0;activePointer=e.pointerId;
+    try{button.setPointerCapture(e.pointerId);}catch(_){}
+});
+
+function release(e){
+    if(!charging)return;
+    if(e&&activePointer!==null&&e.pointerId!==activePointer)return;
+    charging=false;activePointer=null;canThrow=false;
+    const power=Math.max(charge,0.06);
+    bottle.launched=true;throwInProgress=true;throwResultRecorded=false;
+    const referenceMass=0.35;
+    const massFactor=Math.sqrt(referenceMass/bottle.mass);
+    const hr=randomFactor(),vr=randomFactor();
+    bottle.vx=(45+power*115)*scale*massFactor*hr;
+    bottle.vy=-(460+power*540)*scale*massFactor*vr;
+    const referenceInertia=0.35*(bottle.w**2+bottle.h**2)/12;
+    const angularImpulse=(4.5+power*7.0)*referenceInertia;
+    bottle.omega=-angularImpulse/bottle.inertia*randomFactor();
+    const fill=clamp(WATER_PERCENT/100,0,1);
+    bottle.waterX=randomSigned()*bottle.w*0.05*fill;
+    bottle.waterVX=randomSigned()*bottle.w*0.12*fill;
+    charge=0;chargeBar.style.width="0%";
+}
+button.addEventListener("pointerup",release);
+button.addEventListener("pointercancel",release);
+
+function getVertices(){
+    const c=Math.cos(bottle.angle),s=Math.sin(bottle.angle);
+    return SHAPE.map(([nx,ny])=>{
+        const lx=nx*bottle.w,ly=ny*bottle.h;
+        const rx=lx*c-ly*s,ry=lx*s+ly*c;
+        return {x:bottle.x+rx,y:bottle.y+ry,rx,ry};
+    });
+}
+
+function contactImpulse(p,nx,ny){
+    const rx=p.rx,ry=p.ry;
+    const invMass=1/bottle.mass,invInertia=1/bottle.inertia;
+    const pvx=bottle.vx-bottle.omega*ry;
+    const pvy=bottle.vy+bottle.omega*rx;
+    const vn=pvx*nx+pvy*ny;
+    if(vn>=0)return;
+    const crossN=rx*ny-ry*nx;
+    const normalMass=invMass+crossN*crossN*invInertia;
+    const bounce=vn<-100*scale?RESTITUTION:0;
+    const jn=-(1+bounce)*vn/normalMass;
+    bottle.vx+=nx*jn*invMass;
+    bottle.vy+=ny*jn*invMass;
+    bottle.omega+=crossN*jn*invInertia;
+    const tx=-ny,ty=nx;
+    const tvx=bottle.vx-bottle.omega*ry;
+    const tvy=bottle.vy+bottle.omega*rx;
+    const vt=tvx*tx+tvy*ty;
+    const crossT=rx*ty-ry*tx;
+    const tangentMass=invMass+crossT*crossT*invInertia;
+    let jt=-vt/tangentMass;
+    jt=clamp(jt,-FRICTION*jn,FRICTION*jn);
+    bottle.vx+=tx*jt*invMass;
+    bottle.vy+=ty*jt*invMass;
+    bottle.omega+=crossT*jt*invInertia;
+}
+
+function solveBoundaries(){
+    for(let iteration=0;iteration<5;iteration++){
+        const vertices=getVertices();
+        let deepest=null,depth=0,nx=0,ny=0;
+        for(const p of vertices){
+            const floorDepth=p.y-groundY;
+            if(floorDepth>depth){depth=floorDepth;deepest=p;nx=0;ny=-1;}
+            const leftDepth=-p.x;
+            if(leftDepth>depth){depth=leftDepth;deepest=p;nx=1;ny=0;}
+            const rightDepth=p.x-W;
+            if(rightDepth>depth){depth=rightDepth;deepest=p;nx=-1;ny=0;}
+            const ceilingDepth=-p.y;
+            if(ceilingDepth>depth){depth=ceilingDepth;deepest=p;nx=0;ny=1;}
+        }
+        if(!deepest||depth<=0)break;
+        bottle.x+=nx*(depth+0.001);
+        bottle.y+=ny*(depth+0.001);
+        const corrected={rx:deepest.x-bottle.x,ry:deepest.y-bottle.y};
+        contactImpulse(corrected,nx,ny);
+    }
+}
+
+function updateWater(dt){
+    if(bottle.waterMass<=0)return;
+    const fill=clamp(WATER_PERCENT/100,0,1);
+    const sloshSpace=1-fill*0.85;
+    const localGravityX=-Math.sin(bottle.angle);
+    const targetX=localGravityX*bottle.w*0.24*sloshSpace;
+    const stiffness=22,damping=8;
+    const acceleration=(targetX-bottle.waterX)*stiffness-bottle.waterVX*damping;
+    bottle.waterVX+=acceleration*dt;
+    bottle.waterX+=bottle.waterVX*dt;
+    const maxOffset=bottle.w*0.24*sloshSpace;
+    bottle.waterX=clamp(bottle.waterX,-maxOffset,maxOffset);
+    const torque=-bottle.waterX*GRAVITY*scale*bottle.waterMass*0.65;
+    bottle.omega+=torque/bottle.inertia*dt;
+    const sloshDamping=0.15+0.75*Math.sin(fill*Math.PI)*bottle.waterMass;
+    bottle.omega*=Math.exp(-sloshDamping*dt);
+}
+
+function physicsStep(dt){
+    if(!bottle.launched)return;
+    updateWater(dt);
+    bottle.vy+=GRAVITY*scale*dt;
+    bottle.x+=bottle.vx*dt;
+    bottle.y+=bottle.vy*dt;
+    bottle.angle+=bottle.omega*dt;
+    bottle.vx*=Math.exp(-0.055*dt);
+    bottle.vy*=Math.exp(-0.015*dt);
+    bottle.omega*=Math.exp(-0.045*dt);
+    solveBoundaries();
+    const vertices=getVertices();
+    const touchingGround=vertices.some(p=>p.y>=groundY-1.5);
+    if(touchingGround){
+        bottle.vx*=Math.exp(-2.5*dt);
+        bottle.omega*=Math.exp(-1.0*dt);
+    }
+    maybeRecordResult();
+}
+
+function normalizeAngleDeg(a){
+    let deg=a*180/Math.PI;
+    deg=deg%360;
+    if(deg>180)deg-=360;
+    if(deg<=-180)deg+=360;
+    return deg;
+}
+function isBottleUpright(){
+    const deg=normalizeAngleDeg(bottle.angle);
+    return Math.abs(deg)<=SUCCESS_ANGLE_DEG;
+}
+
+function maybeRecordResult(){
+    if(!throwInProgress||throwResultRecorded)return;
+    const speed=Math.hypot(bottle.vx,bottle.vy);
+    const angularSpeed=Math.abs(bottle.omega);
+    if(speed>REST_SPEED||angularSpeed>0.6)return;
+    const vertices=getVertices();
+    const touchingGround=vertices.some(p=>p.y>=groundY-2);
+    if(!touchingGround)return;
+    throwResultRecorded=true;throwInProgress=false;
+    inRestartMode=true;updateButton();
+    const success=isBottleUpright();
+    recordThrow(success);
+    showFlash(success);
+}
+
+async function recordThrow(success){
+    logInfo("throw → server",{success});
+    try{
+        const res=await fetch(API_BASE+"/api/throw",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({initData:tg.initData,success:!!success})
+        });
+        const text=await res.text();
+        logInfo("throw response",res.status,text);
+        if(!res.ok)throw new Error("HTTP "+res.status);
+    }catch(e){
+        logError("throw failed",e);
+        failConnect("Не удалось отправить результат. Проверьте соединение.");
+    }
+}
+
+/* =====================================
+   ЭКРАН ОШИБКИ
+===================================== */
+
+function showServerError(){
+    errorScreen.classList.add("show");
+    button.style.display="none";
+    leaderboardBtn.style.display="none";
+}
+function hideServerError(){errorScreen.classList.remove("show");}
+
+function failConnect(msg){
+    serverReady=false;
+    retryBtn.disabled=false;
+    retryBtn.textContent="Повторить";
+    const t=errorScreen.querySelector(".error-text");
+    if(t&&msg)t.textContent=msg;
+    showServerError();
+    logError("connect failed:",msg||"(no reason)");
+}
+
+/* =====================================
+   ЛИДЕРБОРД
+===================================== */
+
+const overlay=document.getElementById("leaderboardOverlay");
+const lbListEl=document.getElementById("lbList");
+const lbCloseBtn=document.getElementById("lbClose");
+const lbCloseBtn2=document.getElementById("lbClose2");
+
+function openLeaderboard(){overlay.classList.add("show");renderLeaderboard();}
+function closeLeaderboard(){overlay.classList.remove("show");}
+
+leaderboardBtn.addEventListener("click",openLeaderboard);
+lbCloseBtn.addEventListener("click",closeLeaderboard);
+lbCloseBtn2.addEventListener("click",closeLeaderboard);
+overlay.addEventListener("click",e=>{if(e.target===overlay)closeLeaderboard();});
+
+function normalizeEntry(row){
+    return {
+        id:row.id||row.user_id||0,
+        name:row.name||row.first_name||"Игрок",
+        photo_url:row.photo_url||row.photo||"",
+        attempts:Number(row.attempts)||0,
+        successes:Number(row.successes)||0,
+    };
+}
+
+async function fetchLeaderboard(){
+    logInfo("leaderboard request");
+    const res=await fetch(API_BASE+"/api/leaderboard",{cache:"no-store"});
+    const text=await res.text();
+    logInfo("leaderboard response",res.status,text);
+    if(!res.ok)throw new Error("HTTP "+res.status);
+    const data=JSON.parse(text);
+    if(!Array.isArray(data.top))throw new Error("bad leaderboard format");
+    return data.top.map(normalizeEntry);
+}
+
+function percentOf(entry){
+    if(!entry.attempts)return 0;
+    return (entry.successes/entry.attempts)*100;
+}
+function sortLeaderboard(list){
+    return list.slice().sort((a,b)=>{
+        const pa=percentOf(a),pb=percentOf(b);
+        if(pb!==pa)return pb-pa;
+        if(b.successes!==a.successes)return b.successes-a.successes;
+        return a.attempts-b.attempts;
+    });
+}
+function makeAvatarEl(entry){
+    const ava=document.createElement("div");
+    ava.className="lb-avatar";
+    if(entry.photo_url){
+        const img=document.createElement("img");
+        img.src=entry.photo_url;img.alt="";img.referrerPolicy="no-referrer";
+        img.onerror=()=>{img.remove();ava.textContent=(entry.name||"?").charAt(0).toUpperCase();};
+        ava.appendChild(img);
+    }else{
+        ava.textContent=(entry.name||"?").charAt(0).toUpperCase();
+    }
+    return ava;
+}
+
+async function renderLeaderboard(){
+    lbListEl.innerHTML="";
+    const loading=document.createElement("div");
+    loading.className="lb-empty";
+    loading.textContent="Загрузка…";
+    lbListEl.appendChild(loading);
+
+    let sorted;
+    try{
+        sorted=sortLeaderboard(await fetchLeaderboard());
+    }catch(e){
+        logError("leaderboard failed",e);
+        lbListEl.innerHTML="";
+        const err=document.createElement("div");
+        err.className="lb-empty";
+        err.textContent="Не удалось загрузить таблицу. Попробуйте позже.";
+        lbListEl.appendChild(err);
+        return;
+    }
+
+    lbListEl.innerHTML="";
+
+    if(!sorted.length){
+        const empty=document.createElement("div");
+        empty.className="lb-empty";
+        empty.textContent="Пока пусто. Сделайте первый бросок!";
+        lbListEl.appendChild(empty);
+        return;
+    }
+
+    sorted.forEach(entry=>{
+        const isMe=me&&entry.id===me.id;
+        const row=document.createElement("div");
+        row.className="lb-row"+(isMe?" me":"");
+        row.appendChild(makeAvatarEl(entry));
+
+        const info=document.createElement("div");
+        info.className="lb-info";
+        const nameEl=document.createElement("div");
+        nameEl.className="lb-name";
+        nameEl.textContent=entry.name;
+        const detail=document.createElement("div");
+        detail.className="lb-detail";
+        const pct=percentOf(entry);
+        detail.textContent=`${entry.successes} / ${entry.attempts} • ${pct.toFixed(1)}%`;
+        info.appendChild(nameEl);info.appendChild(detail);
+
+        const percentEl=document.createElement("div");
+        percentEl.className="lb-percent";
+        percentEl.textContent=(entry.attempts?pct.toFixed(0):0)+"%";
+
+        row.appendChild(info);row.appendChild(percentEl);
+        lbListEl.appendChild(row);
+    });
+}
+
+/* =====================================
+   ВСПЛЫВАШКА
+===================================== */
+
+const flashEl=document.getElementById("flash");
+let flashTimer=null;
+
+function showFlash(success){
+    flashEl.textContent=success?"🍾 Ровно!":"Не устояла";
+    flashEl.classList.toggle("fail",!success);
+    flashEl.classList.add("show");
+    if(flashTimer)clearTimeout(flashTimer);
+    flashTimer=setTimeout(()=>{flashEl.classList.remove("show");},1100);
+}
+
+/* =====================================
+   ФОН / ТЕНЬ / БУТЫЛКА
+===================================== */
+
+function drawBackground(){
+    ctx.fillStyle="#1e1f22";
+    ctx.fillRect(0,0,W,H);
+
+    ctx.fillStyle="#232529";
+    ctx.fillRect(0,groundY,W,H-groundY);
+
+    ctx.fillStyle="#3a3d43";
+    ctx.fillRect(0,groundY,W,3);
+}
+
+function drawShadow(){
+    const distance=Math.max(0,groundY-bottle.y-bottle.h*0.5);
+    const alpha=Math.max(0.03,0.22-distance/2200);
+    ctx.fillStyle=`rgba(0,0,0,${alpha})`;
+    ctx.beginPath();
+    ctx.ellipse(
+        bottle.x,groundY+4,
+        bottle.w*0.7+distance*0.045,
+        5*scale,0,0,Math.PI*2
+    );
+    ctx.fill();
+}
+
+function drawBottle(){
+    const w=bottle.w;
+    const h=bottle.h;
+
+    ctx.save();
+    ctx.translate(bottle.x,bottle.y);
+    ctx.rotate(bottle.angle);
+
+    const top=-h/2;
+
+    ctx.beginPath();
+    ctx.moveTo(-w*0.40,top+h*0.24);
+    ctx.lineTo(-w*0.48,top+h*0.34);
+    ctx.lineTo(-w*0.48,top+h*0.91);
+    ctx.quadraticCurveTo(-w*0.48,top+h,-w*0.32,top+h);
+    ctx.lineTo(w*0.32,top+h);
+    ctx.quadraticCurveTo(w*0.48,top+h,w*0.48,top+h*0.91);
+    ctx.lineTo(w*0.48,top+h*0.34);
+    ctx.lineTo(w*0.40,top+h*0.24);
+    ctx.closePath();
+
+    ctx.fillStyle="#2f4a55";
+    ctx.fill();
+    ctx.strokeStyle="#5d8ea1";
+    ctx.lineWidth=2*scale;
+    ctx.stroke();
+
+    ctx.save();
+    ctx.clip();
+
+    const waterSurface=top+h*(1-VISUAL_WATER_FILL);
+    ctx.fillStyle="rgba(105,198,245,0.35)";
+    ctx.beginPath();
+    ctx.moveTo(-w,waterSurface-bottle.waterX*0.18);
+    ctx.lineTo(w,waterSurface+bottle.waterX*0.18);
+    ctx.lineTo(w,h);
+    ctx.lineTo(-w,h);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle="rgba(255,255,255,0.10)";
+    ctx.fillRect(-w*0.31,top+h*0.34,w*0.11,h*0.52);
+    ctx.restore();
+
+    ctx.fillStyle="#2a3d47";
+    ctx.fillRect(-w*0.19,top+h*0.10,w*0.38,h*0.17);
+
+    ctx.fillStyle="#4a90b8";
+    ctx.beginPath();
+    ctx.roundRect(-w*0.23,top,w*0.46,h*0.13,3*scale);
+    ctx.fill();
+
+    ctx.fillStyle="#1e1f22";
+    ctx.beginPath();
+    ctx.roundRect(-w*0.46,top+h*0.43,w*0.92,h*0.19,2*scale);
+    ctx.fill();
+
+    ctx.fillStyle="#69c6f5";
+    ctx.fillRect(-w*0.46,top+h*0.51,w*0.92,h*0.035);
+
+    ctx.restore();
+}
+
+/* =====================================
+   ИГРОВОЙ ЦИКЛ
+===================================== */
+
+function loop(time){
+    if(!lastTime)lastTime=time;
+    const dt=Math.min((time-lastTime)/1000,0.05);
+    lastTime=time;
+
+    if(charging){
+        charge=Math.min(1,charge+dt/CHARGE_TIME);
+        chargeBar.style.width=(charge*100)+"%";
+    }
+
+    accumulator+=dt;
+    let steps=0;
+    while(accumulator>=STEP&&steps<8){
+        physicsStep(STEP);
+        accumulator-=STEP;
+        steps++;
+    }
+    if(steps===8)accumulator=0;
+
+    drawBackground();
+    drawShadow();
+    drawBottle();
+
+    requestAnimationFrame(loop);
+}
+
+/* =====================================
+   ИНИЦИАЛИЗАЦИЯ
+===================================== */
+
+async function connect(){
+    retryBtn.disabled=true;
+    retryBtn.textContent="Подключение…";
+    hideServerError();
+    logInfo("connect: start");
+
+    if(!tg||!tg.initData){
+        failConnect("Откройте игру через Telegram (нет initData).");
+        return;
+    }
+
+    tg.ready();
+    tg.expand();
+    try{tg.setHeaderColor("#1e1f22");tg.setBackgroundColor("#1e1f22");}catch(_){}
+
+    const u=tg.initDataUnsafe?.user;
+    if(u){
+        me={
+            id:u.id,
+            first_name:u.first_name||"Игрок",
+            last_name:u.last_name||"",
+            username:u.username||"",
+            photo_url:u.photo_url||"",
+        };
+    }
+
+    const url=API_BASE+"/api/validate";
+    logInfo("connect: validate →",url,"initData length:",tg.initData.length);
+
+    let res,text;
+    try{
+        res=await fetch(url,{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({initData:tg.initData}),
+            credentials:"omit",
+        });
+        text=await res.text();
+    }catch(e){
+        logError("connect: fetch failed",e);
+        let reason="Не удалось выполнить запрос к "+url+".";
+        if(e&&e.name==="TypeError"){
+            reason="Сетевая ошибка или CORS. Проверьте, что сервер доступен и разрешает запросы с "+location.origin+".";
+        }else if(e&&e.name==="AbortError"){
+            reason="Таймаут запроса. Сервер не ответил вовремя.";
+        }
+        failConnect(reason);
+        return;
+    }
+
+    logInfo("connect: validate response",res.status,text);
+
+    if(!res.ok){
+        let detail="";
+        try{const j=JSON.parse(text);detail=j.error||"";}catch(_){}
+        if(res.status===401){
+            failConnect("Неверная подпись Telegram (401). Проверьте BOT_TOKEN на сервере.");
+        }else if(res.status===404){
+            failConnect("Эндпоинт /api/validate не найден (404). Nginx не проксирует API?");
+        }else if(res.status===502||res.status===503){
+            failConnect("Сервер недоступен (HTTP "+res.status+"). Flask не запущен или упал.");
+        }else{
+            failConnect("Сервер вернул HTTP "+res.status+(detail?": "+detail:""));
+        }
+        return;
+    }
+
+    let data;
+    try{data=JSON.parse(text);}
+    catch(e){
+        logError("connect: bad JSON",e,text);
+        failConnect("Сервер вернул не-JSON ответ.");
+        return;
+    }
+
+    if(!data||!data.user){
+        failConnect("Неверный ответ сервера: нет поля user.");
+        return;
+    }
+
+    me={
+        id:data.user.id,
+        first_name:data.user.first_name||"Игрок",
+        last_name:data.user.last_name||"",
+        username:data.user.username||"",
+        photo_url:data.user.photo_url||me.photo_url||"",
+    };
+
+    logInfo("connect: SERVER MODE ON",me);
+
+    const photo=tg.initDataUnsafe?.user?.photo_url||"";
+    if(photo){
+        fetch(API_BASE+"/api/update_profile",{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({initData:tg.initData,photo_url:photo}),
+        })
+        .then(r=>r.text().then(t=>logInfo("update_profile response",r.status,t)))
+        .catch(e=>logWarn("update_profile failed",e));
+    }
+
+    serverReady=true;
+    retryBtn.disabled=false;
+    retryBtn.textContent="Повторить";
+    button.style.display="";
+    leaderboardBtn.style.display="";
+    reset();
+}
+
+retryBtn.addEventListener("click",connect);
+
+/* =====================================
+   ЗАПУСК
+===================================== */
+
+window.addEventListener("resize",resize);
+
+resize();
+requestAnimationFrame(loop);
+connect();
+</script>
+</body>
+</html>
